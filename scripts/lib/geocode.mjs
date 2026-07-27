@@ -27,6 +27,21 @@ export function extractLocationHints(title) {
   return hints;
 }
 
+// タイムアウトやDNSエラーなど、ネットワークが一時的に不安定なだけで
+// 処理全体を止めたくないため、失敗時はnullを返すだけにする。
+async function safeFetchJson(url, options) {
+  try {
+    const response = await fetch(url, options);
+    if (!response.ok) {
+      return null;
+    }
+    return await response.json();
+  } catch (error) {
+    console.warn(`通信に失敗しました(${url}): ${error.message}`);
+    return null;
+  }
+}
+
 // 国土地理院の住所検索API。日本の住所(丁目・番地)であれば、
 // Nominatimより高い精度でピンポイントに位置が取れる。無料・登録不要。
 export async function geocodeAddress(address) {
@@ -34,12 +49,7 @@ export async function geocodeAddress(address) {
     address
   )}`;
 
-  const response = await fetch(url);
-  if (!response.ok) {
-    return null;
-  }
-
-  const results = await response.json();
+  const results = await safeFetchJson(url);
   if (!results || results.length === 0) {
     return null;
   }
@@ -53,7 +63,7 @@ export async function geocode(query) {
     query
   )}`;
 
-  const response = await fetch(url, {
+  const results = await safeFetchJson(url, {
     headers: {
       // Nominatimの利用ポリシーで、身元が分かるUser-Agentが必須。
       "User-Agent":
@@ -61,11 +71,6 @@ export async function geocode(query) {
     },
   });
 
-  if (!response.ok) {
-    return null;
-  }
-
-  const results = await response.json();
   if (!results || results.length === 0) {
     return null;
   }

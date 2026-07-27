@@ -8,18 +8,25 @@ import {
 } from "./geocode.mjs";
 
 export async function fetchArticleHtml(url) {
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent":
-        "tokyo-events-app/0.1 (personal project; contact: capsuleperfume@gmail.com)",
-    },
-  });
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent":
+          "tokyo-events-app/0.1 (personal project; contact: capsuleperfume@gmail.com)",
+      },
+    });
 
-  if (!response.ok) {
+    if (!response.ok) {
+      return null;
+    }
+
+    return await response.text();
+  } catch (error) {
+    // タイムアウトやDNSエラーなど、一時的な通信不良で処理全体を
+    // 止めたくないため、失敗時はnullを返すだけにする。
+    console.warn(`記事の取得に失敗しました(${url}): ${error.message}`);
     return null;
   }
-
-  return response.text();
 }
 
 function cellAfterLabel($, tableSelector, label) {

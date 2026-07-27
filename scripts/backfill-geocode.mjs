@@ -27,28 +27,33 @@ async function main() {
 
   let updated = 0;
   for (const row of rows) {
-    const location = await resolveEventLocation({
-      title: row.title,
-      url: row.source_url,
-      wardContext: WARD_CONTEXT,
-    });
+    try {
+      const location = await resolveEventLocation({
+        title: row.title,
+        url: row.source_url,
+        wardContext: WARD_CONTEXT,
+      });
 
-    if (!location) continue;
+      if (!location) continue;
 
-    const { error: updateError } = await supabase
-      .from("events")
-      .update({
-        venue_name: location.venueName,
-        address: location.address,
-        latitude: location.latitude,
-        longitude: location.longitude,
-      })
-      .eq("id", row.id);
+      const { error: updateError } = await supabase
+        .from("events")
+        .update({
+          venue_name: location.venueName,
+          address: location.address,
+          latitude: location.latitude,
+          longitude: location.longitude,
+        })
+        .eq("id", row.id);
 
-    if (updateError) {
-      console.error(`更新失敗 (${row.title}): ${updateError.message}`);
-    } else {
-      updated++;
+      if (updateError) {
+        console.error(`更新失敗 (${row.title}): ${updateError.message}`);
+      } else {
+        updated++;
+      }
+    } catch (itemError) {
+      // 1件のエラーで全体を止めない。
+      console.error(`処理中にエラー (${row.title}): ${itemError.message}`);
     }
   }
 

@@ -55,11 +55,17 @@ async function ingestSource(supabase, parser, source) {
     const startDate = toDateOnly(item.pubDate);
     if (!startDate) continue;
 
-    const location = await resolveEventLocation({
-      title: item.title,
-      url: item.link,
-      wardContext: source.wardContext,
-    });
+    let location = null;
+    try {
+      location = await resolveEventLocation({
+        title: item.title,
+        url: item.link,
+        wardContext: source.wardContext,
+      });
+    } catch (itemError) {
+      // 1件のエラーで全体を止めない。位置情報なしで登録を続ける。
+      console.error(`位置情報の解決に失敗 (${item.title}): ${itemError.message}`);
+    }
 
     rows.push({
       title: item.title,
