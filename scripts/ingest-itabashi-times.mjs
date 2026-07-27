@@ -1,6 +1,6 @@
 import Parser from "rss-parser";
 import { createClient } from "@supabase/supabase-js";
-import { resolveEventLocation } from "./lib/article.mjs";
+import { resolveEventDetails } from "./lib/article.mjs";
 
 // 取り込み元のRSS一覧。今後ここに他のサイトを追加していく想定。
 const SOURCES = [
@@ -52,28 +52,32 @@ async function ingestSource(supabase, parser, source) {
 
   const rows = [];
   for (const item of newItems) {
-    const startDate = toDateOnly(item.pubDate);
-    if (!startDate) continue;
+    const publishedDate = toDateOnly(item.pubDate);
+    if (!publishedDate) continue;
 
     let location = null;
+    let dateRange = null;
     try {
-      location = await resolveEventLocation({
+      const resolved = await resolveEventDetails({
         title: item.title,
         url: item.link,
+        pubDate: item.pubDate,
         wardContext: source.wardContext,
       });
+      location = resolved.location;
+      dateRange = resolved.dateRange;
     } catch (itemError) {
-      // 1件のエラーで全体を止めない。位置情報なしで登録を続ける。
-      console.error(`位置情報の解決に失敗 (${item.title}): ${itemError.message}`);
+      // 1件のエラーで全体を止めない。位置情報・日付なしで登録を続ける。
+      console.error(`情報の解決に失敗 (${item.title}): ${itemError.message}`);
     }
 
     rows.push({
       title: item.title,
       description: (item.contentSnippet || "").slice(0, 300),
-      // 注意: RSSには「イベント開催日」までは含まれていないため、
-      // 暫定的に記事の公開日をstart_dateとして使っている。
-      start_date: startDate,
-      end_date: null,
+      // 記事本文/タイトルから開催日・オープン日が読み取れればそれを使い、
+      // 読み取れない場合のみ記事の公開日で代用する。
+      start_date: dateRange?.startDate ?? publishedDate,
+      end_date: dateRange?.endDate ?? null,
       venue_name: location?.venueName ?? null,
       address: location?.address ?? null,
       latitude: location?.latitude ?? null,

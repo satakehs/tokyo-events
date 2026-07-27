@@ -6,6 +6,7 @@ import {
   geocode,
   geocodeAddress,
 } from "./geocode.mjs";
+import { extractDateRange, extractYearHint } from "./dates.mjs";
 
 export async function fetchArticleHtml(url) {
   try {
@@ -29,9 +30,9 @@ export async function fetchArticleHtml(url) {
   }
 }
 
-function cellAfterLabel($, tableSelector, label) {
+function cellAfterLabel($, tableSelector, labels) {
   const th = $(`${tableSelector} th`)
-    .filter((_, el) => $(el).text().trim() === label)
+    .filter((_, el) => labels.includes($(el).text().trim()))
     .first();
 
   if (th.length === 0) {
@@ -41,48 +42,78 @@ function cellAfterLabel($, tableSelector, label) {
   return th.next("td");
 }
 
+function textOf(cell) {
+  return cell ? cell.text().replace(/\s+/g, " ").trim() : null;
+}
+
 // いたばしTIMESの記事は、末尾に構造化された表で
-// 「店舗情報」(店舗名・住所)または「イベント情報」(イベント名・日時・場所)が
-// 書かれていることが多い。そこから正確な住所を抜き出す。
+// 「店舗情報」(店舗名・住所・オープン予定日)または
+// 「イベント情報」(イベント名・日時・場所)が書かれていることが多い。
+// そこから正確な住所と開催日/オープン日を抜き出す。
 // 「場所」欄は「施設名(住所)」という書き方が多いので、括弧の中身を住所として扱う。
 export function extractVenueFromArticleHtml(html) {
   const $ = cheerio.load(html);
 
-  const eventPlaceCell = cellAfterLabel($, "table.articleEventInfo", "場所");
+  const eventPlaceCell = cellAfterLabel($, "table.articleEventInfo", ["場所"]);
   if (eventPlaceCell) {
-    const text = eventPlaceCell.text().replace(/\s+/g, " ").trim();
+    const text = textOf(eventPlaceCell);
+    const dateText = textOf(
+      cellAfterLabel($, "table.articleEventInfo", ["日時", "日にち", "開催日"])
+    );
     const match = text.match(/^(.*?)[(（]([^)）]+)[)）]/);
     if (match) {
-      return { venueName: match[1].trim(), address: match[2].trim() };
+      return {
+        venueName: match[1].trim(),
+        address: match[2].trim(),
+        dateText,
+      };
     }
     if (text) {
-      return { venueName: null, address: text };
+      return { venueName: null, address: text, dateText };
     }
   }
 
-  const storeAddressCell = cellAfterLabel($, "table.articleStoreInfo", "住所");
+  const storeAddressCell = cellAfterLabel($, "table.articleStoreInfo", ["住所"]);
   if (storeAddressCell) {
-    const address = storeAddressCell.text().replace(/\s+/g, " ").trim();
-    const storeNameCell = cellAfterLabel($, "table.articleStoreInfo", "店舗名");
-    const venueName = storeNameCell
-      ? storeNameCell.text().replace(/\s+/g, " ").trim()
-      : null;
+    const address = textOf(storeAddressCell);
+    const storeNameCell = cellAfterLabel($, "table.articleStoreInfo", [
+      "店舗名",
+    ]);
+    const openDateCell = $("table.articleStoreInfo th")
+      .filter((_, el) => $(el).text().trim().includes("オープン"))
+      .first()
+      .next("td");
+    const dateText = openDateCell.length ? textOf(openDateCell) : null;
+
     if (address) {
-      return { venueName, address };
+      return {
+        venueName: textOf(storeNameCell),
+        address,
+        dateText,
+      };
     }
   }
 
   return null;
 }
 
-// 1件分の位置情報解決のメイン処理。
-// まず記事本文の構造化された住所を試し(高精度)、
-// それが無ければタイトルからの推測にフォールバックする(低精度)。
-export async function resolveEventLocation({ title, url, wardContext }) {
+// 1件分の位置情報+開催日の解決処理。
+// 位置: まず記事本文の構造化された住所を試し(高精度)、
+//       それが無ければタイトルからの推測にフォールバックする(低精度)。
+// 日付: 記事本文の日時欄 → タイトル、の順に探し、どちらにも無ければnull
+//       (呼び出し側で記事の公開日にフォールバックする想定)。
+export async function resolveEventDetails({ title, url, pubDate, wardContext }) {
+  let location = null;
+  let dateRange = null;
+  const yearHint =
+    extractYearHint(title) ??
+    (pubDate ? new Date(pubDate).getFullYear() : null);
+
   if (url) {
     const html = await fetchArticleHtml(url);
     if (html) {
       const extracted = extractVenueFromArticleHtml(html);
+
       if (extracted?.address) {
         const fullAddress = extracted.address.startsWith("東京都")
           ? extracted.address
@@ -90,7 +121,7 @@ export async function resolveEventLocation({ title, url, wardContext }) {
         const geocoded = await geocodeAddress(fullAddress);
         await sleep(300);
         if (geocoded) {
-          return {
+          location = {
             venueName: extracted.venueName,
             address: extracted.address,
             latitude: geocoded.lat,
@@ -98,21 +129,32 @@ export async function resolveEventLocation({ title, url, wardContext }) {
           };
         }
       }
+
+      if (extracted?.dateText) {
+        dateRange = extractDateRange(extracted.dateText, yearHint);
+      }
     }
   }
 
-  for (const hint of extractLocationHints(title)) {
-    const geocoded = await geocode(`${wardContext}${hint}`);
-    await sleep(GEOCODE_INTERVAL_MS);
-    if (geocoded) {
-      return {
-        venueName: hint,
-        address: null,
-        latitude: geocoded.lat,
-        longitude: geocoded.lon,
-      };
+  if (!dateRange) {
+    dateRange = extractDateRange(title, yearHint);
+  }
+
+  if (!location) {
+    for (const hint of extractLocationHints(title)) {
+      const geocoded = await geocode(`${wardContext}${hint}`);
+      await sleep(GEOCODE_INTERVAL_MS);
+      if (geocoded) {
+        location = {
+          venueName: hint,
+          address: null,
+          latitude: geocoded.lat,
+          longitude: geocoded.lon,
+        };
+        break;
+      }
     }
   }
 
-  return null;
+  return { location, dateRange };
 }
