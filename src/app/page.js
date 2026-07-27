@@ -1,6 +1,6 @@
 import styles from "./page.module.css";
 import { supabase } from "@/lib/supabaseClient";
-import MapSection from "@/components/MapSection";
+import EventBrowser from "@/components/EventBrowser";
 
 // データは1日1回のバッチ収集で更新されるだけなので、
 // ページを毎回アクセス時に取得し直す(静的にキャッシュさせない)。
@@ -16,34 +16,11 @@ export default async function Home() {
     return <p>データの取得に失敗しました: {error.message}</p>;
   }
 
-  const eventsWithLocation = events.filter(
-    (event) => event.latitude != null && event.longitude != null
-  );
-
   return (
     <div className={styles.page}>
       <main className={styles.main}>
         <h1>東京イベント一覧(テスト表示)</h1>
-        <p>
-          全{events.length}件中、位置情報があるのは{eventsWithLocation.length}
-          件です。
-        </p>
-        <MapSection events={events} />
-        <ul>
-          {events.map((event) => (
-            <li key={event.id}>
-              <strong>{event.title}</strong>({event.start_date} 〜{" "}
-              {event.end_date})
-              <br />
-              {event.venue_name} / {event.category}
-              <br />
-              出典:{" "}
-              <a href={event.source_url} target="_blank" rel="noreferrer">
-                {event.source_name}
-              </a>
-            </li>
-          ))}
-        </ul>
+        <EventBrowser events={events} />
       </main>
     </div>
   );
