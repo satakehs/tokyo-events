@@ -7,7 +7,8 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
-    "ingest:itabashi": "node scripts/ingest-itabashi-times.mjs"
+    "ingest:itabashi": "node scripts/ingest-itabashi-times.mjs",
+    "backfill:geocode": "node scripts/backfill-geocode.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.8",
