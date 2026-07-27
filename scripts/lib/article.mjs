@@ -46,6 +46,18 @@ function textOf(cell) {
   return cell ? cell.text().replace(/\s+/g, " ").trim() : null;
 }
 
+// 表に日付欄が無い記事でも、本文中に「オープンしたのは2026年7月10日。」
+// のような一文があることが多いので、そこから拾う。
+// ページ下部の「関連記事」欄には別記事の同じ言い回しが混ざっているため、
+// 本文エリア(.article__body)だけに絞って探す。
+function extractBodyDateHint($) {
+  const bodyText = $(".article__body").text();
+  const match = bodyText.match(
+    /(?:オープン|リニューアル|移転|閉店)(?:したの)?は\s*(\d{4}年\d{1,2}月\d{1,2}日)/
+  );
+  return match ? match[1] : null;
+}
+
 // いたばしTIMESの記事は、末尾に構造化された表で
 // 「店舗情報」(店舗名・住所・オープン予定日)または
 // 「イベント情報」(イベント名・日時・場所)が書かれていることが多い。
@@ -53,13 +65,15 @@ function textOf(cell) {
 // 「場所」欄は「施設名(住所)」という書き方が多いので、括弧の中身を住所として扱う。
 export function extractVenueFromArticleHtml(html) {
   const $ = cheerio.load(html);
+  const bodyDateHint = extractBodyDateHint($);
 
   const eventPlaceCell = cellAfterLabel($, "table.articleEventInfo", ["場所"]);
   if (eventPlaceCell) {
     const text = textOf(eventPlaceCell);
-    const dateText = textOf(
+    const tableDateText = textOf(
       cellAfterLabel($, "table.articleEventInfo", ["日時", "日にち", "開催日"])
     );
+    const dateText = tableDateText || bodyDateHint;
     const match = text.match(/^(.*?)[(（]([^)）]+)[)）]/);
     if (match) {
       return {
@@ -83,7 +97,8 @@ export function extractVenueFromArticleHtml(html) {
       .filter((_, el) => $(el).text().trim().includes("オープン"))
       .first()
       .next("td");
-    const dateText = openDateCell.length ? textOf(openDateCell) : null;
+    const tableDateText = openDateCell.length ? textOf(openDateCell) : null;
+    const dateText = tableDateText || bodyDateHint;
 
     if (address) {
       return {
@@ -92,6 +107,10 @@ export function extractVenueFromArticleHtml(html) {
         dateText,
       };
     }
+  }
+
+  if (bodyDateHint) {
+    return { venueName: null, address: null, dateText: bodyDateHint };
   }
 
   return null;
