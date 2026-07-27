@@ -1,6 +1,10 @@
 import styles from "./page.module.css";
 import { supabase } from "@/lib/supabaseClient";
 
+// データは1日1回のバッチ収集で更新されるだけなので、
+// ページを毎回アクセス時に取得し直す(静的にキャッシュさせない)。
+export const dynamic = "force-dynamic";
+
 export default async function Home() {
   const { data: events, error } = await supabase
     .from("events")
