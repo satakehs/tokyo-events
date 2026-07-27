@@ -27,6 +27,27 @@ export function extractLocationHints(title) {
   return hints;
 }
 
+// 国土地理院の住所検索API。日本の住所(丁目・番地)であれば、
+// Nominatimより高い精度でピンポイントに位置が取れる。無料・登録不要。
+export async function geocodeAddress(address) {
+  const url = `https://msearch.gsi.go.jp/address-search/AddressSearch?q=${encodeURIComponent(
+    address
+  )}`;
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    return null;
+  }
+
+  const results = await response.json();
+  if (!results || results.length === 0) {
+    return null;
+  }
+
+  const [lon, lat] = results[0].geometry.coordinates;
+  return { lat, lon };
+}
+
 export async function geocode(query) {
   const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(
     query

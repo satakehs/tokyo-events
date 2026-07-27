@@ -1,8 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
-import { GEOCODE_INTERVAL_MS, sleep, extractLocationHints, geocode } from "./lib/geocode.mjs";
+import { resolveEventLocation } from "./lib/article.mjs";
 
-// すでに登録済みだが位置情報がまだ無いイベントに、後から
-// 位置情報を補完するための一回限りのバックフィル用スクリプト。
+// 過去に登録した分は精度の低い方法(タイトルからの推測)で位置情報を
+// 付けていたため、記事本文から正確な住所を取り直して上書きする。
 const WARD_CONTEXT = "東京都板橋区";
 
 async function main() {
@@ -19,8 +19,7 @@ async function main() {
 
   const { data: rows, error } = await supabase
     .from("events")
-    .select("id, title")
-    .is("latitude", null);
+    .select("id, title, source_url");
 
   if (error) {
     throw new Error(`取得失敗: ${error.message}`);
@@ -28,30 +27,32 @@ async function main() {
 
   let updated = 0;
   for (const row of rows) {
-    for (const hint of extractLocationHints(row.title)) {
-      const geocoded = await geocode(`${WARD_CONTEXT}${hint}`);
-      await sleep(GEOCODE_INTERVAL_MS);
-      if (geocoded) {
-        const { error: updateError } = await supabase
-          .from("events")
-          .update({
-            latitude: geocoded.lat,
-            longitude: geocoded.lon,
-            venue_name: hint,
-          })
-          .eq("id", row.id);
+    const location = await resolveEventLocation({
+      title: row.title,
+      url: row.source_url,
+      wardContext: WARD_CONTEXT,
+    });
 
-        if (updateError) {
-          console.error(`更新失敗 (${row.title}): ${updateError.message}`);
-        } else {
-          updated++;
-        }
-        break;
-      }
+    if (!location) continue;
+
+    const { error: updateError } = await supabase
+      .from("events")
+      .update({
+        venue_name: location.venueName,
+        address: location.address,
+        latitude: location.latitude,
+        longitude: location.longitude,
+      })
+      .eq("id", row.id);
+
+    if (updateError) {
+      console.error(`更新失敗 (${row.title}): ${updateError.message}`);
+    } else {
+      updated++;
     }
   }
 
-  console.log(`${rows.length}件中${updated}件に位置情報を補完しました`);
+  console.log(`${rows.length}件中${updated}件の位置情報を更新しました`);
 }
 
 main().catch((error) => {

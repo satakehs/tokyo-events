@@ -1,6 +1,6 @@
 import Parser from "rss-parser";
 import { createClient } from "@supabase/supabase-js";
-import { GEOCODE_INTERVAL_MS, sleep, extractLocationHints, geocode } from "./lib/geocode.mjs";
+import { resolveEventLocation } from "./lib/article.mjs";
 
 // 取り込み元のRSS一覧。今後ここに他のサイトを追加していく想定。
 const SOURCES = [
@@ -55,20 +55,11 @@ async function ingestSource(supabase, parser, source) {
     const startDate = toDateOnly(item.pubDate);
     if (!startDate) continue;
 
-    let latitude = null;
-    let longitude = null;
-    let venueName = null;
-
-    for (const hint of extractLocationHints(item.title)) {
-      const geocoded = await geocode(`${source.wardContext}${hint}`);
-      await sleep(GEOCODE_INTERVAL_MS);
-      if (geocoded) {
-        latitude = geocoded.lat;
-        longitude = geocoded.lon;
-        venueName = hint;
-        break;
-      }
-    }
+    const location = await resolveEventLocation({
+      title: item.title,
+      url: item.link,
+      wardContext: source.wardContext,
+    });
 
     rows.push({
       title: item.title,
@@ -77,10 +68,10 @@ async function ingestSource(supabase, parser, source) {
       // 暫定的に記事の公開日をstart_dateとして使っている。
       start_date: startDate,
       end_date: null,
-      venue_name: venueName,
-      address: null,
-      latitude,
-      longitude,
+      venue_name: location?.venueName ?? null,
+      address: location?.address ?? null,
+      latitude: location?.latitude ?? null,
+      longitude: location?.longitude ?? null,
       category: item.categories?.[0] ?? "未分類",
       source_name: source.name,
       source_url: item.link,
