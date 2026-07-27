@@ -6,10 +6,6 @@ const SOURCES = [
   {
     name: "いたばしTIMES",
     feedUrl: "https://itabashi-times.com/feed/",
-    // このタグが付いた記事だけをイベントとして取り込む。
-    // (このRSSには店舗の開店・閉店情報やグルメレポなど、
-    //  イベント以外の記事も混ざっているため)
-    eventCategoryTag: "イベント情報",
   },
 ];
 
@@ -24,8 +20,9 @@ function toDateOnly(pubDate) {
 async function ingestSource(supabase, parser, source) {
   const feed = await parser.parseURL(source.feedUrl);
 
+  // カテゴリーによる絞り込みはしない(イベント/グルメ/全部の切り替えは
+  // アプリ側のフィルターUIで行う想定のため、ここでは全件取り込む)。
   const rows = feed.items
-    .filter((item) => (item.categories || []).includes(source.eventCategoryTag))
     .map((item) => ({
       title: item.title,
       description: (item.contentSnippet || "").slice(0, 300),
@@ -37,7 +34,7 @@ async function ingestSource(supabase, parser, source) {
       address: null,
       latitude: null,
       longitude: null,
-      category: source.eventCategoryTag,
+      category: item.categories?.[0] ?? "未分類",
       source_name: source.name,
       source_url: item.link,
     }))
